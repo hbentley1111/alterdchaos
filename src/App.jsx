@@ -2485,6 +2485,56 @@ function Lots({ lots, initial, onOpen, onNew, onSave, onDelete, onConvert }) {
   const grade = lotGrade(f, c);
   const build = f.exitMode === "build";
 
+  const [lookupInput, setLookupInput] = useState("");
+  const [lookupBusy, setLookupBusy] = useState(false);
+  const [lookupMsg, setLookupMsg] = useState(null); // { kind: 'ok' | 'err', text }
+
+  const matchCounty = (raw) => {
+    if (!raw) return null;
+    const base = String(raw).toLowerCase().replace(/\s+county$/, "").trim();
+    const hit = COUNTIES.find((co) => co.key === base || co.key === base.replace(/\s+/g, ""));
+    return hit ? hit.key : null;
+  };
+
+  const runLookup = async () => {
+    const q = lookupInput.trim();
+    if (!q) {
+      setLookupMsg({ kind: "err", text: "Enter a parcel address or listing URL." });
+      return;
+    }
+    setLookupBusy(true);
+    setLookupMsg(null);
+    try {
+      const res = await fetch(`/api/lookup?type=lot&q=${encodeURIComponent(q)}`, { headers: { Accept: "application/json" } });
+      let data = null;
+      try { data = await res.json(); } catch (_) {}
+      if (res.status === 404 && (!data || !data.error)) {
+        setLookupMsg({ kind: "err", text: "Lookup needs the backend deployed. Add your RentCast key and deploy via Git or the Netlify CLI (see README). You can still enter everything manually below." });
+        return;
+      }
+      if (!res.ok || !data || data.error) {
+        setLookupMsg({ kind: "err", text: (data && data.error) || "Lookup failed — enter the parcel details manually below." });
+        return;
+      }
+      const patch = {};
+      if (data.lotSize) patch.lotSize = data.lotSize;
+      if (data.zoning) patch.zoning = data.zoning;
+      if (data.resolvedAddress) patch.address = data.resolvedAddress;
+      const co = matchCounty(data.county);
+      if (co) patch.county = co;
+      set(patch);
+      const bits = [];
+      if (data.lotSize) bits.push(`${(num(data.lotSize) / 43560).toFixed(2)} acres`);
+      if (data.zoning) bits.push(`zoning ${data.zoning}`);
+      if (data.county) bits.push(data.county);
+      setLookupMsg({ kind: "ok", text: `Pulled ${bits.join(" · ") || "the parcel record"} for ${data.resolvedAddress || q}. Lot comps still come from your own sold-land data below.` });
+    } catch (_) {
+      setLookupMsg({ kind: "err", text: "Couldn't reach the lookup service. Check your connection, or enter details manually below." });
+    } finally {
+      setLookupBusy(false);
+    }
+  };
+
   const pickCounty = (key) => set({ county: key });
   const updateDev = (id, patch) => set({ devItems: f.devItems.map((x) => (x.id === id ? { ...x, ...patch } : x)) });
   const addDev = () => set({ devItems: [...f.devItems, { id: uid(), label: "", cost: "" }] });
@@ -2529,6 +2579,28 @@ function Lots({ lots, initial, onOpen, onNew, onSave, onDelete, onConvert }) {
 
       <div className="ac-feas">
         <div>
+          {/* auto-fill from a listing */}
+          <div className="ac-card" style={{ padding: 22, marginBottom: 20 }}>
+            <div className="ac-eyebrow">Auto-Fill From Listing</div>
+            <p className="ac-note" style={{ marginTop: 0, marginBottom: 12 }}>
+              Paste a parcel address (Street, City, State, Zip) or a listing link. Pulls lot size, zoning, and county where a public record exists — land records are spottier than homes, so comps stay manual.
+            </p>
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+              <input className="ac-input" style={{ flex: 1, minWidth: 220 }}
+                placeholder="Oak Ridge Rd, Charlotte, NC, 28213  —  or a listing URL"
+                value={lookupInput} onChange={(e) => setLookupInput(e.target.value)}
+                onKeyDown={(e) => (e.key === "Enter" ? runLookup() : null)} />
+              <button className="ac-btn primary" onClick={runLookup} disabled={lookupBusy}>
+                {lookupBusy ? "Pulling…" : "Pull Data"}
+              </button>
+            </div>
+            {lookupMsg && (
+              <div className="ac-note" style={{ marginTop: 10, color: lookupMsg.kind === "ok" ? "var(--good)" : "var(--warn)" }}>
+                {lookupMsg.text}
+              </div>
+            )}
+          </div>
+
           {/* the lot */}
           <div className="ac-card" style={{ padding: 22, marginBottom: 20 }}>
             <div className="ac-eyebrow">The Lot</div>

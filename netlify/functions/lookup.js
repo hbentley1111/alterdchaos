@@ -1,7 +1,8 @@
 /* netlify/functions/lookup.js
-   Server-side property lookup for the Flip Analyzer. Takes an address (or a
-   listing URL it extracts the address from), calls the RentCast AVM endpoint,
-   and returns the subject property's attributes plus sold comparables.
+   Server-side property lookup for the Flip and Lot analyzers. Takes an address
+   (or a listing URL it extracts the address from) and, based on ?type=:
+     - flip (default) → RentCast AVM: subject attributes + sold comps
+     - lot            → RentCast property record: lot size, zoning, county
 
    Why this runs on the server, not in the app:
      - The RentCast API key must stay secret. In a client-side app anyone could
@@ -18,7 +19,8 @@
 
    RentCast docs: https://developers.rentcast.io/reference/value-estimate */
 
-const RENTCAST_URL = "https://api.rentcast.io/v1/avm/value";
+const AVM_URL = "https://api.rentcast.io/v1/avm/value";
+const PROPERTIES_URL = "https://api.rentcast.io/v1/properties";
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -29,6 +31,19 @@ const CORS = {
 
 const ok = (data) => ({ statusCode: 200, headers: CORS, body: JSON.stringify(data) });
 const err = (statusCode, message) => ({ statusCode, headers: CORS, body: JSON.stringify({ error: message }) });
+
+/* One RentCast GET with a hard timeout so a hung upstream fails fast. */
+async function rcGet(url, key) {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 8000);
+  try {
+    const res = await fetch(url, { headers: { "X-Api-Key": key, Accept: "application/json" }, signal: ctrl.signal });
+    const data = await res.json();
+    return { res, data };
+  } finally {
+    clearTimeout(timer);
+  }
+}
 
 /* Pull a "Street, City, State, Zip" address out of raw user input. If it's not
    a URL we pass it straight through. URL parsing is best-effort — the returned
@@ -95,17 +110,39 @@ export const handler = async (event) => {
   const address = toAddress(raw);
   if (!address) return err(400, "Enter a property address or a listing URL.");
 
+  const type = event.queryStringParameters && event.queryStringParameters.type === "lot" ? "lot" : "flip";
+
+  // ---- Lot: pull the parcel record (lot size, zoning, county) ----
+  if (type === "lot") {
+    let res, data;
+    try {
+      ({ res, data } = await rcGet(`${PROPERTIES_URL}?address=${encodeURIComponent(address)}&limit=1`, key));
+    } catch (_) {
+      return err(502, "Couldn't reach the property data service. Try again in a moment.");
+    }
+    if (res.status === 429) return err(429, "Property lookups are rate-limited right now — wait a moment and try again.");
+    if (res.status === 401) return err(502, "The RentCast API key was rejected — check RENTCAST_API_KEY in Netlify.");
+    const rec = Array.isArray(data) ? data[0] : data && data.id ? data : null;
+    if (res.status === 404 || !rec) {
+      return err(404, `No parcel record for "${address}". Land records are spottier than homes — try the full Street, City, State, Zip, or enter the details manually.`);
+    }
+    if (!res.ok) return err(502, (data && data.message) || "Parcel lookup failed.");
+    return ok({
+      type: "lot",
+      resolvedAddress: rec.formattedAddress || address,
+      lotSize: rec.lotSize || null,
+      zoning: rec.zoning || null,
+      county: rec.county || null,
+      propertyType: rec.propertyType || null,
+      lastSalePrice: rec.lastSalePrice || null,
+      lastSaleDate: rec.lastSaleDate || null,
+    });
+  }
+
+  // ---- Flip (default): home valuation + sold comps ----
   let res, data;
   try {
-    const url = `${RENTCAST_URL}?address=${encodeURIComponent(address)}&compCount=8`;
-    const ctrl = new AbortController();
-    const timer = setTimeout(() => ctrl.abort(), 8000); // fail fast, well under Netlify's limit
-    try {
-      res = await fetch(url, { headers: { "X-Api-Key": key, Accept: "application/json" }, signal: ctrl.signal });
-      data = await res.json();
-    } finally {
-      clearTimeout(timer);
-    }
+    ({ res, data } = await rcGet(`${AVM_URL}?address=${encodeURIComponent(address)}&compCount=8`, key));
   } catch (_) {
     return err(502, "Couldn't reach the property data service. Try again in a moment.");
   }
