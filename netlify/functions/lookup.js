@@ -46,7 +46,11 @@ function toAddress(raw) {
     return input;
   }
   const segs = path.split("/").filter(Boolean);
-  const deHyphen = (s) => decodeURIComponent(s).replace(/-/g, " ").trim();
+  const deHyphen = (s) => {
+    let d = s;
+    try { d = decodeURIComponent(s); } catch (_) {} // tolerate stray % in pasted URLs
+    return d.replace(/-/g, " ").trim();
+  };
 
   // Realtor.com: /realestateandhomes-detail/5500-Grand-Lake-Dr_San-Antonio_TX_78244_M00000-00000
   if (/realtor\.com/i.test(input)) {
@@ -94,11 +98,19 @@ export const handler = async (event) => {
   let res, data;
   try {
     const url = `${RENTCAST_URL}?address=${encodeURIComponent(address)}&compCount=8`;
-    res = await fetch(url, { headers: { "X-Api-Key": key, Accept: "application/json" } });
-    data = await res.json();
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 8000); // fail fast, well under Netlify's limit
+    try {
+      res = await fetch(url, { headers: { "X-Api-Key": key, Accept: "application/json" }, signal: ctrl.signal });
+      data = await res.json();
+    } finally {
+      clearTimeout(timer);
+    }
   } catch (_) {
     return err(502, "Couldn't reach the property data service. Try again in a moment.");
   }
+
+  if (res.status === 429) return err(429, "Property lookups are rate-limited right now — wait a moment and try again.");
 
   if (res.status === 401) return err(502, "The RentCast API key was rejected — check RENTCAST_API_KEY in Netlify.");
   if (res.status === 404 || !data || (!data.subjectProperty && !data.comparables)) {

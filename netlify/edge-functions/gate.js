@@ -11,7 +11,8 @@
      Visit /logout to clear the session.
 
    This is a SHARED password (everyone uses the same one), not per-user
-   accounts. It fails closed: if SITE_PASSCODE is unset, the site is blocked. */
+   accounts. If SITE_PASSCODE is unset the gate passes traffic through (off),
+   so leaving this file in the repo is harmless until you opt in. */
 
 const COOKIE = "ac_session";
 const MAX_AGE = 60 * 60 * 24 * 7; // 7 days
@@ -66,11 +67,10 @@ export default async (request, context) => {
   }
 
   const pass = getEnv("SITE_PASSCODE");
-  if (!pass) {
-    return page(`<form><p style="color:var(--ash);font-size:13px;line-height:1.6;margin:0;">
-      This site isn't configured yet. The owner needs to set the <b>SITE_PASSCODE</b>
-      environment variable in Netlify, then redeploy.</p></form>`, 503);
-  }
+  // Not configured → let the request through (do nothing). This makes the file
+  // safe to leave in the repo: the gate only engages once you BOTH enable the
+  // [[edge_functions]] block in netlify.toml AND set SITE_PASSCODE in Netlify.
+  if (!pass) return context.next();
 
   const expected = await sha256hex(pass);
   if (context.cookies.get(COOKIE) === expected) {
@@ -98,4 +98,8 @@ export default async (request, context) => {
     </form>`, showError ? 401 : 200);
 };
 
-export const config = { path: "/*", excludedPath: ["/assets/*"] };
+/* NOTE: no inline `export const config` on purpose. Netlify auto-discovers files
+   in netlify/edge-functions/, and an inline config with path:"/*" would turn the
+   gate on for every deploy — blacking out the site when SITE_PASSCODE is unset.
+   Instead this gate is opt-in: enable the [[edge_functions]] block in netlify.toml
+   (which sets path + excludedPath) and set SITE_PASSCODE. Until then it never runs. */

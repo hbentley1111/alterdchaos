@@ -3,6 +3,10 @@
   command = "npm run build"
   publish = "dist"
 
+# Pin the runtime so the lookup function has a global fetch() (Node 18+).
+[build.environment]
+  NODE_VERSION = "20"
+
 # Serverless functions (property lookup for the Flip Analyzer).
 # Requires a Git or CLI deploy — functions don't run on drag-and-drop deploys.
 [functions]
@@ -25,12 +29,14 @@
 # ---------------------------------------------------------------------------
 # REAL server-side password protection (free), for Git/CLI deploys only.
 # To turn it on:
-#   1. Uncomment the three lines below.
+#   1. Uncomment the block below.
 #   2. In Netlify: Site configuration > Environment variables >
 #      add SITE_PASSCODE = your-password
 #   3. Redeploy. Everyone hits a password screen before the app loads.
 # Leave it commented if you're using the in-app passcode or drag-and-drop deploys.
+# (gate.js has no inline config, so while this stays commented the gate never runs.)
 # ---------------------------------------------------------------------------
 # [[edge_functions]]
 #   function = "gate"
 #   path = "/*"
+#   excludedPath = ["/assets/*", "/api/*"]

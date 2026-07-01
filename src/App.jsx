@@ -157,10 +157,11 @@ button:focus-visible,.ac-input:focus-visible,.ac-select:focus-visible{outline:2p
 /* feasibility */
 .ac-feas{display:grid;grid-template-columns:1fr 340px;gap:24px;align-items:start;}
 .ac-cta{display:flex;align-items:center;gap:18px;padding:18px 22px;border-radius:13px;cursor:pointer;width:100%;text-align:left;
-  border:1px solid var(--line2);background:
+  color:var(--bone);border:1px solid var(--line2);background:
    radial-gradient(120% 160% at 100% 0%, rgba(255,91,35,.16), transparent 55%),
    var(--panel);transition:.15s;}
 .ac-cta:hover{border-color:var(--ember);transform:translateY(-1px);}
+.ac-cta .ac-display{color:var(--ember);}
 .ac-cta .badge{flex-shrink:0;width:46px;height:46px;border-radius:11px;display:grid;place-items:center;
   background:linear-gradient(135deg,var(--ember),var(--blood));color:#fff;}
 .ac-crow{display:grid;grid-template-columns:minmax(120px,1.4fr) 110px 80px 92px 70px 34px;gap:10px;align-items:center;padding:9px 14px;min-width:560px;}
