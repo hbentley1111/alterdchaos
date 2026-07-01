@@ -1,0 +1,36 @@
+# Netlify build settings for the Altar'd Chaos app.
+[build]
+  command = "npm run build"
+  publish = "dist"
+
+# Serverless functions (property lookup for the Flip Analyzer).
+# Requires a Git or CLI deploy — functions don't run on drag-and-drop deploys.
+[functions]
+  directory = "netlify/functions"
+  node_bundler = "esbuild"
+
+# Pretty path for the lookup function: /api/lookup -> the function.
+# MUST come before the SPA catch-all below (first matching rule wins).
+[[redirects]]
+  from = "/api/*"
+  to = "/.netlify/functions/:splat"
+  status = 200
+
+# Single-page app: send every other route to index.html.
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
+
+# ---------------------------------------------------------------------------
+# REAL server-side password protection (free), for Git/CLI deploys only.
+# To turn it on:
+#   1. Uncomment the three lines below.
+#   2. In Netlify: Site configuration > Environment variables >
+#      add SITE_PASSCODE = your-password
+#   3. Redeploy. Everyone hits a password screen before the app loads.
+# Leave it commented if you're using the in-app passcode or drag-and-drop deploys.
+# ---------------------------------------------------------------------------
+# [[edge_functions]]
+#   function = "gate"
+#   path = "/*"
